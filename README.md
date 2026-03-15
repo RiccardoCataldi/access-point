@@ -3,9 +3,6 @@
 ## Overview
 This script creates a configurable WiFi access point that can be used for network testing and monitoring in controlled environments. It sets up a complete network infrastructure including DHCP services and NAT routing.
 
-## ⚠️ Security Notice
-This tool is intended for educational and authorized testing purposes only. Using this script to create unauthorized access points or monitor network traffic without permission may be illegal in your jurisdiction. Always obtain proper authorization before use.
-
 ## Core Components
 
 ### 1. Network Interface Configuration
