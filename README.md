@@ -15,8 +15,8 @@ Edit the variables at the top of `fake_ap.sh`:
 ```bash
 FAKE_SSID="Free_Public_WiFi"
 CHANNEL="6"
-INTERNET_IFACE="enx00e04c480aba"   # uplink with internet (ip route | grep default)
-AP_IFACE="wlp2s0"                  # wireless card used as AP
+INTERNET_IFACE="eth0"              # uplink with internet: ip route | grep default
+AP_IFACE="wlan0"                   # wireless card for AP: iw dev
 GATEWAY_IP="10.0.0.1"
 ```
 
@@ -28,7 +28,7 @@ sudo ./fake_ap.sh
 
 The script:
 
-1. Creates `wlp2s0` in managed mode on the wireless phy.
+1. Creates the AP interface (e.g. `wlan0`) in managed mode on the wireless phy.
 2. Starts `hostapd` with an open SSID on the chosen channel.
 3. Starts `dnsmasq` (DHCP + DNS forwarder to 1.1.1.1 / 8.8.8.8).
 4. Enables IP forwarding and MASQUERADE toward the uplink.
@@ -39,14 +39,14 @@ The script:
 
 ```bash
 sudo journalctl -t dnsmasq -f          # DHCP leases + every client DNS query
-sudo wireshark -i wlp2s0               # capture client L3 traffic
-sudo iw dev wlp2s0 station dump        # client L2 state (RSSI, rate, traffic)
+sudo wireshark -i wlan0                # capture client L3 traffic (use your AP_IFACE)
+sudo iw dev wlan0 station dump         # client L2 state (RSSI, rate, traffic)
 cat /var/lib/misc/dnsmasq.leases       # active leases
 ```
 
 ## Wireshark — enumeration filters
 
-Open Wireshark on `wlp2s0` and apply the display filter you need.
+Open Wireshark on your AP interface (e.g. `wlan0`) and apply the display filter you need.
 
 ### Identify the device
 
@@ -109,14 +109,18 @@ not (eth.dst == ff:ff:ff:ff:ff:ff) && not (ip.dst >= 224.0.0.0 && ip.dst <= 239.
 
 - To quickly extract only the **SNI** visited by a client:
   ```bash
-  sudo tshark -i wlp2s0 -Y 'tls.handshake.type==1 && ip.src==10.0.0.42' \
+  sudo tshark -i wlan0 -Y 'tls.handshake.type==1 && ip.src==10.0.0.42' \
     -T fields -e tls.handshake.extensions_server_name
   ```
 - For continuous pcap dumps to analyze offline:
   ```bash
-  sudo tcpdump -i wlp2s0 -w /tmp/capture.pcap
+  sudo tcpdump -i wlan0 -w /tmp/capture.pcap
   ```
 - DNS queries are also visible in `journalctl -t dnsmasq -f` without Wireshark.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
 
 ## Legal notice
 

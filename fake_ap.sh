@@ -3,8 +3,8 @@
 # === CONFIGURATION ===
 FAKE_SSID="Free_Public_WiFi"
 CHANNEL="6"
-INTERNET_IFACE="enx00e04c480aba"   # uplink with internet (ip route | grep default)
-AP_IFACE="wlp2s0"                  # wireless card used as AP
+INTERNET_IFACE="eth0"              # uplink with internet: ip route | grep default
+AP_IFACE="wlan0"                   # wireless card for AP: iw dev
 DNSMASQ_CONF="/tmp/dnsmasq.conf"
 HOSTAPD_CONF="/tmp/hostapd.conf"
 IP_RANGE_START="10.0.0.10"
