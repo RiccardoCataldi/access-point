@@ -1,62 +1,123 @@
-# Fake Access Point Script
+# Fake Access Point
 
-## Overview
-This script creates a configurable WiFi access point that can be used for network testing and monitoring in controlled environments. It sets up a complete network infrastructure including DHCP services and NAT routing.
-
-## Core Components
-
-### 1. Network Interface Configuration
-- Uses two network interfaces:
-  - Internet Interface (eth0): Provides internet connectivity
-  - Wireless Interface (wlan0): Creates the access point
-- Configurable interface names in the script
-
-### 2. Monitor Mode Setup
-- Automatically handles interfering processes
-- Enables monitor mode on wireless interface
-- Creates a dedicated monitoring interface
-
-### 3. Access Point Creation
-- Configurable SSID and channel
-- Uses airbase-ng for AP creation
-- Creates virtual interface (at0) for client connections
-
-### 4. Network Configuration
-- Configurable IP range and network settings
-- Default configuration:
-  - Gateway: 10.0.0.1
-  - Netmask: 255.255.255.0
-  - DHCP Range: 10.0.0.10 - 10.0.0.50
-
-### 5. DHCP Services
-- Automatic IP assignment for clients
-- DNS and gateway configuration
-- Uses dnsmasq for DHCP services
-
-### 6. NAT Configuration
-- Enables IP forwarding
-- Sets up NAT rules using iptables
-- Manages traffic routing between interfaces
-
-### 7. Safety Features
-- Automatic cleanup on script termination
-- Restores normal network configuration
-- Removes temporary files and configurations
+Rogue open Wi-Fi AP for traffic capture in controlled environments. Uses `hostapd` (native nl80211 AP mode) + `dnsmasq` (DHCP/DNS) + `iptables` NAT toward an uplink interface.
 
 ## Requirements
-- Linux operating system
-- Root privileges
-- Wireless adapter supporting monitor mode
-- Required packages:
-  - aircrack-ng
-  - dnsmasq
-  - iptables
-  - xterm
+
+- Linux, root.
+- Wireless card with AP-mode support (`iw phy` → `Supported interface modes: ... AP`).
+- Packages: `hostapd`, `dnsmasq`, `iw`, `iptables`, `rfkill`, `wireshark`.
 
 ## Configuration
-Edit the following variables in the script according to your needs:
+
+Edit the variables at the top of `fake_ap.sh`:
+
 ```bash
 FAKE_SSID="Free_Public_WiFi"
 CHANNEL="6"
-INTERNET_IFACE="eth0"
-MON_IFACE="wlan0"# access-point
+INTERNET_IFACE="enx00e04c480aba"   # uplink with internet (ip route | grep default)
+AP_IFACE="wlp2s0"                  # wireless card used as AP
+GATEWAY_IP="10.0.0.1"
+```
+
+## Run
+
+```bash
+sudo ./fake_ap.sh
+```
+
+The script:
+
+1. Creates `wlp2s0` in managed mode on the wireless phy.
+2. Starts `hostapd` with an open SSID on the chosen channel.
+3. Starts `dnsmasq` (DHCP + DNS forwarder to 1.1.1.1 / 8.8.8.8).
+4. Enables IP forwarding and MASQUERADE toward the uplink.
+5. Prints connected clients in real time (MAC + IP + hostname from lease).
+6. Ctrl+C runs full cleanup (iptables rules, interface, NM, ip_forward).
+
+## Live monitoring
+
+```bash
+sudo journalctl -t dnsmasq -f          # DHCP leases + every client DNS query
+sudo wireshark -i wlp2s0               # capture client L3 traffic
+sudo iw dev wlp2s0 station dump        # client L2 state (RSSI, rate, traffic)
+cat /var/lib/misc/dnsmasq.leases       # active leases
+```
+
+## Wireshark — enumeration filters
+
+Open Wireshark on `wlp2s0` and apply the display filter you need.
+
+### Identify the device
+
+| What you learn | Filter |
+| --- | --- |
+| Hostname and vendor (DHCP options 12/55/60) | `dhcp` |
+| Device name + services (Bonjour/AirPlay/Chromecast) | `mdns` |
+| Windows hostname / SMB | `nbns` |
+| Device model (UPnP) | `ssdp` |
+| Vendor from MAC | `eth.addr == aa:bb:cc:dd:ee:ff` |
+| All traffic from one client | `ip.addr == 10.0.0.X` |
+
+### Where it is browsing (including HTTPS)
+
+| What you learn | Filter |
+| --- | --- |
+| Domains resolved via DNS | `dns.qry.name` |
+| HTTPS domains (SNI in ClientHello) | `tls.handshake.type == 1` |
+| DNS responses with resolved IPs | `dns.flags.response == 1` |
+| QUIC connections (Google, YouTube, Meta) | `quic` |
+| Plain HTTP (full URL) | `http.request` |
+| App/browser User-Agent | `http.user_agent` |
+
+### Sessions and new connections
+
+| What you learn | Filter |
+| --- | --- |
+| SYN only (new TCP connections) | `tcp.flags.syn == 1 && tcp.flags.ack == 0` |
+| TLS handshakes in progress | `tls.handshake` |
+| Large transfers (HTTP/2 over TLS) | `tcp.len > 1000` |
+| ICMP (client diagnostic pings) | `icmp` |
+
+### Credentials / forms (rare with HTTPS, still worth checking)
+
+| What you learn | Filter |
+| --- | --- |
+| HTTP POST (login on http:// sites) | `http.request.method == "POST"` |
+| FTP credentials | `ftp.request.command in {"USER","PASS"}` |
+| Telnet | `telnet` |
+| Plain SMTP/IMAP/POP3 | `smtp || imap || pop` |
+| Suspicious strings in payload | `frame contains "password"` |
+
+### Useful combinations
+
+```text
+# one client's encrypted traffic + contacted domains
+ip.src == 10.0.0.42 && (dns || tls.handshake.type == 1)
+
+# passive phone model discovery
+ip.src == 10.0.0.42 && (dhcp || mdns || ssdp || nbns)
+
+# traffic to a specific domain (e.g. social)
+tls.handshake.extensions_server_name contains "instagram"
+
+# exclude broadcast/multicast noise
+not (eth.dst == ff:ff:ff:ff:ff:ff) && not (ip.dst >= 224.0.0.0 && ip.dst <= 239.255.255.255)
+```
+
+### Tips
+
+- To quickly extract only the **SNI** visited by a client:
+  ```bash
+  sudo tshark -i wlp2s0 -Y 'tls.handshake.type==1 && ip.src==10.0.0.42' \
+    -T fields -e tls.handshake.extensions_server_name
+  ```
+- For continuous pcap dumps to analyze offline:
+  ```bash
+  sudo tcpdump -i wlp2s0 -w /tmp/capture.pcap
+  ```
+- DNS queries are also visible in `journalctl -t dnsmasq -f` without Wireshark.
+
+## Legal notice
+
+Use only on networks and devices you own or have written authorization to test. Intercepting others' traffic is illegal.
