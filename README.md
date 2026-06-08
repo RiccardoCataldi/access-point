@@ -10,13 +10,42 @@ Rogue open Wi-Fi AP for traffic capture in controlled environments. Uses `hostap
 
 ## Configuration
 
-Edit the variables at the top of `fake_ap.sh`:
+Edit the variables at the top of `fake_ap.sh`.
+
+### `INTERNET_IFACE` — uplink with internet
+
+This is the interface that already has a default route (Ethernet, USB adapter, Wi‑Fi client, etc.). Names vary by machine (`eth0`, `enp3s0`, `wlp3s0`, …).
+
+```bash
+ip route | grep default
+# default via 192.168.1.1 dev enp3s0 ...
+#                            ^^^^^^
+#                            use this name
+```
+
+Set `INTERNET_IFACE` to the interface after `dev`.
+
+### `AP_IFACE` — wireless card for the fake AP
+
+Use the physical Wi‑Fi interface from `iw dev`. Often `wlan0`, but it can be `wlp2s0` or similar.
+
+```bash
+iw dev
+# phy#0
+#   Interface wlan0
+#             ^^^^^
+#             use this name
+```
+
+Pick the interface on the phy that supports AP mode (`iw phy` → `Supported interface modes: ... AP`). Do not use Docker bridges (`docker0`, `br-*`) or virtual interfaces (`veth*`).
+
+### Example
 
 ```bash
 FAKE_SSID="Free_Public_WiFi"
 CHANNEL="6"
-INTERNET_IFACE="eth0"              # uplink with internet: ip route | grep default
-AP_IFACE="wlan0"                   # wireless card for AP: iw dev
+INTERNET_IFACE="enp3s0"
+AP_IFACE="wlan0"
 GATEWAY_IP="10.0.0.1"
 ```
 
