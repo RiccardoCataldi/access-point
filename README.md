@@ -2,6 +2,8 @@
 
 Rogue open Wi-Fi AP for traffic capture in controlled environments. Uses `hostapd` (native nl80211 AP mode) + `dnsmasq` (DHCP/DNS) + `iptables` NAT toward an uplink interface.
 
+![Fake AP in action](screenshot.png)
+
 ## Requirements
 
 - Linux, root.

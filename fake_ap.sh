@@ -3,7 +3,7 @@
 # === CONFIGURATION ===
 FAKE_SSID="Free_Public_WiFi"
 CHANNEL="6"
-INTERNET_IFACE="eth0"              # uplink with internet: ip route | grep default
+INTERNET_IFACE="enx26d8a2259465"   # uplink with internet: ip route | grep default
 AP_IFACE="wlan0"                   # wireless card for AP: iw dev
 DNSMASQ_CONF="/tmp/dnsmasq.conf"
 HOSTAPD_CONF="/tmp/hostapd.conf"
